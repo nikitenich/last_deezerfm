@@ -39,7 +39,5 @@ module LastDeezerFm
       end
       puts string
     end
-
   end
-
 end

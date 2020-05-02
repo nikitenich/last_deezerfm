@@ -116,7 +116,5 @@ module LastDeezerFm
       end
       result
     end
-
   end
-
 end

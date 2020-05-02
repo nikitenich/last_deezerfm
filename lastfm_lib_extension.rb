@@ -17,8 +17,8 @@ class Lastfm::MethodCategory::User < Lastfm::MethodCategory::Base
       begin
         print "Getting #{page}/#{pages_count}\r"
         all << self.get_loved_tracks(options.merge(page: page))
-      rescue Exception => e
-        print e
+      rescue StandardError => e
+        puts e
       end
     end
     puts "#{all.count}/#{songs_count} tracks fetched!"

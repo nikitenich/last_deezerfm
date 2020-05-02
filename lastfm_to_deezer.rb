@@ -33,9 +33,9 @@ module LastDeezerFm
                      end
 
       create_lastfm_playlist if @playlists.empty? # создаём плейлист, если нет ни одного
+
       # получаем последнюю песню в плейлисте в deezer,
       # чтобы не начинать импорт с самого начала
-
       playlist_with_last_track = if @playlists.last[:tracks_count].zero?
                                    @playlists[-2][:id]
                                  else
@@ -98,11 +98,8 @@ module LastDeezerFm
     # Выбирает плейлист. Если количество треков в последнем плейлисте < константы, то берём его,
     # иначе создаём новый
     # Возвращает id плейлиста
-    def choose_lastfm_playlist(*args)
+    def choose_lastfm_playlist
       last_created_playlist = playlists.last
-      if args.include?(:previous)
-        return @playlists[-2]
-      end
       last_created_playlist[:tracks_count] >= DEEZER_MAX_PLAYLIST_TRACKS ? create_lastfm_playlist : last_created_playlist[:id]
     end
 

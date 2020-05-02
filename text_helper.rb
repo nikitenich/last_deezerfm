@@ -15,7 +15,5 @@ module LastDeezerFm
       res = Text::WhiteSimilarity.similarity(s1, s2)
       res > 0.5
     end
-
   end
-
 end
