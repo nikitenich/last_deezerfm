@@ -10,7 +10,7 @@ module LastDeezerFm
       @lastfm = lastfm
       @deezer = deezer
       @lastfm_user = lastfm_user
-      @playlist_prefix = 'LastFM-test_loved-'.freeze
+      @playlist_prefix = 'LastFM-loved-'.freeze
       @playlists = playlists
       @uid = SecureRandom.hex(5)
     end
@@ -42,6 +42,8 @@ module LastDeezerFm
                       loved_tracks.index(last_playlist_track_lastfm)
                     end
 
+      return if start_index == loved_tracks.count - 1
+
       (start_index..loved_tracks.count - 1).each do |i|
         puts i.to_s.blue
         track = loved_tracks[i]
@@ -55,8 +57,18 @@ module LastDeezerFm
           FileHelper.save_file(lastfm_name, filename: 'not_found', extension: :txt, mode: 'a')
         else
           lastfm_playlist_action do |playlist|
-            @deezer.add_track_to_playlist(playlist_id: playlist, track_id: selected_track[:id])
-            FileHelper.lputs("Трек #{selected_track[:artist]} - #{selected_track[:title]} добавлен", @uid)
+            # добавляем трек в плейлист
+            @deezer.add_track_to_playlist(playlist_id: playlist, track_id: selected_track[:id]) do |success|
+              if success
+                FileHelper.lputs("Трек #{selected_track[:artist]} - #{selected_track[:title]} добавлен в плейлист", @uid)
+              end
+            end
+            # и лайкаем его
+            @deezer.like_track(selected_track[:id]) do |success|
+              if success
+                FileHelper.lputs("Трек #{selected_track[:artist]} - #{selected_track[:title]} лайкнут", @uid)
+              end
+            end
           end
         end
       end

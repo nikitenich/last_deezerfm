@@ -9,6 +9,7 @@ require_relative 'deezer'
 require_relative 'file_helper'
 require_relative 'lastfm_to_deezer'
 require_relative 'text_helper'
+require_relative 'rest_wrapper'
 
 lastfm = Lastfm.new(LASTFM_API_KEY, LASTFM_SECRET)
 deezer = LastDeezerFm::Deezer.new(DEEZER_APP_ID, DEEZER_SECRET_KEY)

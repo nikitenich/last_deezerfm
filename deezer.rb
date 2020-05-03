@@ -1,7 +1,5 @@
 module LastDeezerFm
   class Deezer
-    @code
-    @access_token
 
     def initialize(api_key, secret_key)
       @api_key = api_key
@@ -12,69 +10,84 @@ module LastDeezerFm
     # возввращает плейлисты текущего пользователя
     def playlists
       uri = 'https://api.deezer.com/user/me/playlists'
-      JSON.parse(RestClient.get(uri, {params: {:access_token => @access_token}}))
+      headers = {params: {access_token: @access_token}}
+      RestWrapper.perform_request(uri, :get, headers)
     end
 
     # возвращает 'true', если тречок добавился
-    def add_track_to_playlist(playlist_id:, track_id:)
+    def add_track_to_playlist(playlist_id:, track_id:, &block)
       uri = "https://api.deezer.com/playlist/#{playlist_id}/tracks"
-      response = JSON.parse(RestClient.post(uri, {}, {params: {:access_token => @access_token, :songs => track_id}}))
-      response if success_response?(response) do |success|
-        puts response['error']['message'] unless success
-      end
+      headers = {params: {access_token: @access_token, songs: track_id}}
+      RestWrapper.perform_request(uri, :post, headers, &block)
     end
 
     # возвращает массив с треками
     def playlist_tracks(playlist_id, next_url: nil)
       uri = next_url.nil? ? "https://api.deezer.com/playlist/#{playlist_id}/tracks" : next_url
-      response = JSON.parse(RestClient.get(uri, {params: {:access_token => @access_token}}))
-      response if success_response?(response, true)
+      headers = {params: {access_token: @access_token}}
+      RestWrapper.perform_request(uri, :get, headers)
     end
 
     def last_playlist_track(playlist_id)
       response = playlist_tracks(playlist_id)
-      while response.has_key?('next')
+      while response.key?('next')
         response = playlist_tracks(playlist_id, next_url: response['next'])
       end
       response['data'].last
     end
 
+    # возвращает массив с id треков
+    def all_playlist_tracks(playlist_id)
+      responses = []
+      response = playlist_tracks(playlist_id)
+      responses << response
+      while response.key?('next')
+        response = playlist_tracks(playlist_id, next_url: response['next'])
+        responses << response
+      end
+      responses.map { |e| e['data'] }.flatten.map { |e| e['id'] }
+    end
+
     # возвращает id плейлиста
     def create_playlist(name)
       uri = 'https://api.deezer.com/user/me/playlists'
-      response = JSON.parse(RestClient.post(uri, {}, {params: {:access_token => @access_token, :title => name}}))
-      response['id'] if success_response?(response, true) do |success|
+      headers = {params: {access_token: @access_token, title: name}}
+      RestWrapper.perform_request(uri, :post, headers) do |success|
         puts "Создан плейлист \"#{name}\" с id #{response['id']}." if success
       end
     end
 
-    # возвращает id песни в Deezer
+    # возвращает песни в Deezer из поиска
     def find_track(track_name)
       uri = 'https://api.deezer.com/search/track'
-      response = JSON.parse(RestClient.get(uri, {params: {:access_token => @access_token, :q => track_name, :strict => 'on'}}))
-      if success_response?(response, true)
-        if response['total'].to_i < 1
-          puts "Трек #{track_name} не был найден!"
-        end
-        response['data']
-      end
+      headers = {params: {access_token: @access_token, q: track_name, strict: 'on'}}
+      response = RestWrapper.perform_request(uri, :get, headers)
+      puts "Трек #{track_name} не был найден!" if response['total'].to_i < 1
+      response['data']
+    end
+
+    def like_track(track_id, &block)
+      uri = 'https://api.deezer.com/user/me/tracks'
+      headers = {params: {track_id: track_id, access_token: @access_token}}
+      RestWrapper.perform_request(uri, :post, headers, &block)
     end
 
     private
 
     def auth
       unless auth_valid?
-        puts "Авторизуемся..."
+        puts 'Авторизуемся...'
         permissions = %w[basic_access manage_library delete_library]
         uri = "https://connect.deezer.com/oauth/auth.php?app_id=#{@api_key}&redirect_uri=#{DEEZER_REDIRECT_URI}&perms=#{permissions.join(',')}"
         Launchy.open(uri)
-        print "Введите код из адресной строки: "
+        print 'Введите код из адресной строки: '
         @code = STDIN.gets.chomp
-        access_token_uri = "https://connect.deezer.com/oauth/access_token.php"
-        response = RestClient.get(access_token_uri, {params: {:app_id => @api_key, :secret => @secret_key, :code => @code}})
+        access_token_uri = 'https://connect.deezer.com/oauth/access_token.php'
+        headers = {params: {app_id: @api_key, secret: @secret_key, code: @code}}
+        response = RestWrapper.perform_request(access_token_uri, :get, headers)
         begin
           response = Hash[*response.split('&').collect { |i| i.split('=') }.flatten]
-        rescue
+        rescue StandardError
           raise "Пришёл некорректный ответ \"#{response}\"."
         end
         @access_token = response.fetch('access_token')
@@ -87,11 +100,14 @@ module LastDeezerFm
       if FileHelper.file_exists?(filename: 'auth', extension: :txt)
         possible_token = FileHelper.read_file(filename: 'auth', extension: :txt)
         uri = 'https://api.deezer.com/user/me/playlists'
-        response = JSON.parse(RestClient.get(uri, {params: {:access_token => possible_token}}))
-        success_response?(response) do |success|
+        headers = {params: {access_token: possible_token}}
+        RestWrapper.perform_request(uri, :get, headers) do |success|
           if success
             @access_token = possible_token
-            puts "Сохранённый access token всё ещё действителен, используем его."
+            puts 'Сохранённый access token всё ещё действителен, используем его.'
+            return true
+          else
+            return false
           end
         end
       else
@@ -99,22 +115,5 @@ module LastDeezerFm
       end
     end
 
-    def success_response?(response, raise_on_error = false)
-      result = case response
-               when Hash
-                 !response.has_key?('error')
-               when String
-                 response == 'true'
-               when TrueClass
-                 response
-               when FalseClass
-                 response
-               end
-      yield result if block_given?
-      if raise_on_error && !result
-        raise "Возникла ошибка при выполнении запроса. Ответ:\n#{response}"
-      end
-      result
-    end
   end
 end
