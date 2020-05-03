@@ -10,7 +10,7 @@ module LastDeezerFm
       @lastfm = lastfm
       @deezer = deezer
       @lastfm_user = lastfm_user
-      @playlist_prefix = 'LastFM-loved-'.freeze
+      @playlist_prefix = 'LastFM-test_loved-'.freeze
       @playlists = playlists
       @uid = SecureRandom.hex(5)
     end
@@ -18,25 +18,13 @@ module LastDeezerFm
     # Импортирует любимые треки из lastfm
     def lastfm_loved
       # Получаем любимые треки с lastfm либо из файла, если изменений не было
-      loved_tracks = if FileHelper.file_exists? && FileHelper.read_file.count >= @lastfm.user.loved_count(@lastfm_user)
-                       puts 'Loved loaded from file'
-                       FileHelper.read_file.map { |h| h.transform_keys(&:to_sym) }
-                     else
-                       arr = @lastfm.user.get_all_loved_tracks(lastfm_user: @lastfm_user).map do |e|
-                         Hash.new.tap do |h|
-                           h[:title] = e['name']
-                           h[:artist] = e['artist']['name']
-                         end
-                       end
-                       FileHelper.save_file(arr)
-                       arr
-                     end
+      loved_tracks = get_lastfm_loved_tracks
 
       create_lastfm_playlist if @playlists.empty? # создаём плейлист, если нет ни одного
 
       # получаем последнюю песню в плейлисте в deezer,
       # чтобы не начинать импорт с самого начала
-      playlist_with_last_track = if @playlists.last[:tracks_count].zero?
+      playlist_with_last_track = if @playlists.last[:tracks_count].zero? && @playlists.count > 1
                                    @playlists[-2][:id]
                                  else
                                    @playlists.last[:id]
@@ -60,8 +48,6 @@ module LastDeezerFm
         lastfm_name = "#{track[:artist]} - #{track[:title]}"
         deezer_tracks_search_result = @deezer.find_track(lastfm_name)
         FileHelper.lputs(lastfm_name, @uid)
-        # FileHelper.lputs('Search results:', @uid)
-        # FileHelper.lputs(searched_songs_mapping(deezer_tracks_search_result), @uid)
         selected_track = choose_track(deezer_tracks_search_result, track[:artist], track[:title])
         FileHelper.lputs('Selected result:', @uid)
         FileHelper.lputs(selected_track, @uid)
@@ -77,6 +63,47 @@ module LastDeezerFm
     end
 
     private
+
+    # Загружает любимые треки с ласта в массив из хэшей
+    def get_lastfm_loved_tracks
+      if FileHelper.file_exists? # проверяем есть ли файл
+        lastfm_loved_tracks_count = @lastfm.user.loved_count(@lastfm_user)
+        file = FileHelper.read_file.map { |h| h.transform_keys(&:to_sym) }
+        if file.count >= lastfm_loved_tracks_count
+          puts 'Loved loaded from file'
+          file
+        else
+          new_loved_tracks_count = lastfm_loved_tracks_count - file.count
+          puts "Found #{new_loved_tracks_count} new Last.fm loved tracks. Let's update saved file."
+          pages_to_download = new_loved_tracks_count / 50 + (new_loved_tracks_count % 50 > 0 ? 1 : 0)
+          updated_pages = []
+          (1..pages_to_download).each do |page|
+            updated_pages << @lastfm.user.get_loved_tracks(user: @lastfm_user, page: page)
+          end
+          updated_pages.reverse!.flatten!.map! do |e|
+            Hash.new.tap do |h|
+              h[:title] = e['name']
+              h[:artist] = e['artist']['name']
+            end
+          end
+          updated_pages.dup.shift(new_loved_tracks_count).each do |new_track|
+            file << new_track
+          end
+          FileHelper.save_file(file)
+          file
+        end
+      else # если файла нет, то нужно бы заново вообще всё загрузить
+        #старые треки будут самые первые, для удобного импорта
+        loaded_loved_tracks = @lastfm.user.get_all_loved_tracks(user: @lastfm_user).reverse.map do |e|
+          Hash.new.tap do |h|
+            h[:title] = e['name']
+            h[:artist] = e['artist']['name']
+          end
+        end
+        FileHelper.save_file(loaded_loved_tracks)
+        loaded_loved_tracks
+      end
+    end
 
     # Создаёт новый плейлист и возвращает его id
     def create_lastfm_playlist

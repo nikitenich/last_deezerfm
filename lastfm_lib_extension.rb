@@ -21,8 +21,8 @@ class Lastfm::MethodCategory::User < Lastfm::MethodCategory::Base
         puts e
       end
     end
-    puts "#{all.count}/#{songs_count} tracks fetched!"
     all.flatten!
+    puts "#{all.count}/#{songs_count} tracks fetched!"
     raise "Only #{all.count}/#{songs_count} tracks fetched!" unless all.count == songs_count
     all
   end
@@ -32,4 +32,3 @@ class Lastfm::MethodCategory::User < Lastfm::MethodCategory::Base
     request('getLovedTracks', options).xml['lovedtracks']['total'].to_i
   end
 end
-
