@@ -5,6 +5,9 @@ module LastDeezerFm
       @api_key = api_key
       @secret_key = secret_key
       auth
+      puts 'Loading favourite tracks from Deezer...'
+      @favourite_playlist_id = playlists.detect { |e| e['is_loved_track'] }['id']
+      @favourite_tracks_ids = playlist_tracks(@favourite_playlist_id, all: true).map { |e| e['id'] }
     end
 
     # возввращает плейлисты текущего пользователя
@@ -73,6 +76,14 @@ module LastDeezerFm
       uri = 'https://api.deezer.com/user/me/tracks'
       headers = {params: {track_id: track_id, access_token: @access_token}}
       RestWrapper.perform_request(uri, :post, headers, &block)
+    end
+
+    def favourite_track?(track_id)
+      @favourite_tracks_ids.include?(track_id)
+    end
+
+    def favourite_tracks_ids
+      @favourite_tracks_ids
     end
 
     private

@@ -61,16 +61,21 @@ module LastDeezerFm
             # добавляем трек в плейлист
             @deezer.add_track_to_playlist(playlist_id: playlist, track_id: selected_track[:id]) do |success|
               if success
+                @deezer.favourite_tracks_ids.push(selected_track[:id])
                 FileHelper.lputs("Track #{selected_track[:artist]} - #{selected_track[:title]} added to playlist", @uid)
               end
             end
-            # и лайкаем его
-            @deezer.like_track(selected_track[:id]) do |success|
-              if success
-                FileHelper.lputs("Track #{selected_track[:artist]} - #{selected_track[:title]} added to favourites.", @uid)
+            # и лайкаем его, если ещё нет
+            unless @deezer.favourite_track?(selected_track[:id])
+              @deezer.like_track(selected_track[:id]) do |success|
+                if success
+                  FileHelper.lputs("Track #{selected_track[:artist]} - #{selected_track[:title]} added to favourites.", @uid)
+                end
               end
             end
+
           end
+
         end
       end
     end
