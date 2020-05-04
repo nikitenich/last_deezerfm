@@ -8,10 +8,16 @@ module LastDeezerFm
     end
 
     # возввращает плейлисты текущего пользователя
-    def playlists
-      uri = 'https://api.deezer.com/user/me/playlists'
+    def playlists(all = false, next_url: nil)
+      uri = next_url.nil? ? 'https://api.deezer.com/user/me/playlists' : next_url
       headers = {params: {access_token: @access_token}}
-      RestWrapper.perform_request(uri, :get, headers)
+
+      if all
+        iterator_wrapper(__method__, next_url: uri)
+      else
+        response = RestWrapper.perform_request(uri, :get, headers)
+        next_url.nil? ? response['data'] : response
+      end
     end
 
     # возвращает 'true', если тречок добавился
@@ -21,31 +27,23 @@ module LastDeezerFm
       RestWrapper.perform_request(uri, :post, headers, &block)
     end
 
+    def delete_track_from_playlist(playlist_id:, track_id:, &block)
+      uri = "https://api.deezer.com/playlist/#{playlist_id}/tracks"
+      headers = {params: {access_token: @access_token, songs: track_id}}
+      RestWrapper.perform_request(uri, :delete, headers, &block)
+    end
+
     # возвращает массив с треками
-    def playlist_tracks(playlist_id, next_url: nil)
+    def playlist_tracks(playlist_id, next_url: nil, all: false)
       uri = next_url.nil? ? "https://api.deezer.com/playlist/#{playlist_id}/tracks" : next_url
       headers = {params: {access_token: @access_token}}
-      RestWrapper.perform_request(uri, :get, headers)
-    end
 
-    def last_playlist_track(playlist_id)
-      response = playlist_tracks(playlist_id)
-      while response.key?('next')
-        response = playlist_tracks(playlist_id, next_url: response['next'])
+      if all
+        iterator_wrapper(__method__, playlist_id, next_url: uri)
+      else
+        response = RestWrapper.perform_request(uri, :get, headers)
+        next_url.nil? ? response['data'] : response
       end
-      response['data'].last
-    end
-
-    # возвращает массив с id треков
-    def all_playlist_tracks(playlist_id)
-      responses = []
-      response = playlist_tracks(playlist_id)
-      responses << response
-      while response.key?('next')
-        response = playlist_tracks(playlist_id, next_url: response['next'])
-        responses << response
-      end
-      responses.map { |e| e['data'] }.flatten.map { |e| e['id'] }
     end
 
     # возвращает id плейлиста
@@ -53,17 +51,22 @@ module LastDeezerFm
       uri = 'https://api.deezer.com/user/me/playlists'
       headers = {params: {access_token: @access_token, title: name}}
       RestWrapper.perform_request(uri, :post, headers) do |success|
-        puts "Создан плейлист \"#{name}\" с id #{response['id']}." if success
+        puts "Playlist \"#{name}\" was successfully created." if success
       end
     end
 
     # возвращает песни в Deezer из поиска
-    def find_track(track_name)
-      uri = 'https://api.deezer.com/search/track'
+    def find_track(track_name, next_url: nil, all: false)
+      uri = next_url.nil? ? 'https://api.deezer.com/search/track' : next_url
       headers = {params: {access_token: @access_token, q: track_name, strict: 'on'}}
-      response = RestWrapper.perform_request(uri, :get, headers)
-      puts "Трек #{track_name} не был найден!" if response['total'].to_i < 1
-      response['data']
+
+      if all
+        iterator_wrapper(__method__, track_name, next_url: uri)
+      else
+        response = RestWrapper.perform_request(uri, :get, headers)
+        puts "Track #{track_name} not found in Deezer!" if response['total'].to_i < 1
+        next_url.nil? ? response['data'] : response
+      end
     end
 
     def like_track(track_id, &block)
@@ -76,11 +79,11 @@ module LastDeezerFm
 
     def auth
       unless auth_valid?
-        puts 'Авторизуемся...'
+        puts 'Authorization...'
         permissions = %w[basic_access manage_library delete_library]
         uri = "https://connect.deezer.com/oauth/auth.php?app_id=#{@api_key}&redirect_uri=#{DEEZER_REDIRECT_URI}&perms=#{permissions.join(',')}"
         Launchy.open(uri)
-        print 'Введите код из адресной строки: '
+        print 'Enter code from url: '
         @code = STDIN.gets.chomp
         access_token_uri = 'https://connect.deezer.com/oauth/access_token.php'
         headers = {params: {app_id: @api_key, secret: @secret_key, code: @code}}
@@ -88,7 +91,7 @@ module LastDeezerFm
         begin
           response = Hash[*response.split('&').collect { |i| i.split('=') }.flatten]
         rescue StandardError
-          raise "Пришёл некорректный ответ \"#{response}\"."
+          raise "Received incorrect response: \"#{response}\"."
         end
         @access_token = response.fetch('access_token')
         FileHelper.save_file(@access_token, extension: :txt)
@@ -104,15 +107,24 @@ module LastDeezerFm
         RestWrapper.perform_request(uri, :get, headers) do |success|
           if success
             @access_token = possible_token
-            puts 'Сохранённый access token всё ещё действителен, используем его.'
-            return true
-          else
-            return false
+            puts 'Saved access token is still valid, so use it.'
           end
+          return success
         end
       else
         false
       end
+    end
+
+    def iterator_wrapper(method_name, *arg)
+      responses = []
+      response = send(method_name, *arg)
+      responses << response
+      while response.key?('next')
+        response = send(method_name, *arg[0], next_url: response['next'])
+        responses << response
+      end
+      responses.map { |e| e['data'] }.flatten
     end
 
   end

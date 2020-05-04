@@ -1,15 +1,8 @@
-require 'rest-client'
 require 'lastfm'
-require 'launchy'
-require 'text'
 require 'colorize'
-require_relative 'lastfm_lib_extension'
+require 'require_all'
 require_relative 'constants'
-require_relative 'deezer'
-require_relative 'file_helper'
-require_relative 'lastfm_to_deezer'
-require_relative 'text_helper'
-require_relative 'rest_wrapper'
+require_rel 'lib'
 
 lastfm = Lastfm.new(LASTFM_API_KEY, LASTFM_SECRET)
 deezer = LastDeezerFm::Deezer.new(DEEZER_APP_ID, DEEZER_SECRET_KEY)

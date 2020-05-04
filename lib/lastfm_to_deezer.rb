@@ -1,10 +1,11 @@
 module LastDeezerFm
   class Importer
+    require 'launchy'
     require 'securerandom'
 
     def initialize(lastfm:, deezer:, lastfm_user: nil)
-      raise 'Argument should be a LastFm instance.' unless lastfm.is_a? Lastfm
-      raise 'Argument should be a Deezer instance.' unless deezer.is_a? LastDeezerFm::Deezer
+      raise 'Argument should be a LastFm instance!' unless lastfm.is_a? Lastfm
+      raise 'Argument should be a Deezer instance!' unless deezer.is_a? LastDeezerFm::Deezer
       raise 'Lastfm username cannot be nil!' if lastfm_user.nil?
 
       @lastfm = lastfm
@@ -29,7 +30,7 @@ module LastDeezerFm
                                  else
                                    @playlists.last[:id]
                                  end
-      last_playlist_track = searched_songs_mapping(@deezer.last_playlist_track(playlist_with_last_track))
+      last_playlist_track = searched_songs_mapping(@deezer.playlist_tracks(playlist_with_last_track, all: true).last)
 
       start_index = if last_playlist_track.nil?
                       0
@@ -60,13 +61,13 @@ module LastDeezerFm
             # добавляем трек в плейлист
             @deezer.add_track_to_playlist(playlist_id: playlist, track_id: selected_track[:id]) do |success|
               if success
-                FileHelper.lputs("Трек #{selected_track[:artist]} - #{selected_track[:title]} добавлен в плейлист", @uid)
+                FileHelper.lputs("Track #{selected_track[:artist]} - #{selected_track[:title]} added to playlist", @uid)
               end
             end
             # и лайкаем его
             @deezer.like_track(selected_track[:id]) do |success|
               if success
-                FileHelper.lputs("Трек #{selected_track[:artist]} - #{selected_track[:title]} лайкнут", @uid)
+                FileHelper.lputs("Track #{selected_track[:artist]} - #{selected_track[:title]} added to favourites.", @uid)
               end
             end
           end
@@ -82,12 +83,12 @@ module LastDeezerFm
         lastfm_loved_tracks_count = @lastfm.user.loved_count(@lastfm_user)
         file = FileHelper.read_file.map { |h| h.transform_keys(&:to_sym) }
         if file.count >= lastfm_loved_tracks_count
-          puts 'Loved loaded from file'
+          puts 'Seems there is no new loved Last.fm tracks. Loaded from file.'
           file
         else
           new_loved_tracks_count = lastfm_loved_tracks_count - file.count
           puts "Found #{new_loved_tracks_count} new Last.fm loved tracks. Let's update saved file."
-          pages_to_download = new_loved_tracks_count / 50 + (new_loved_tracks_count % 50 > 0 ? 1 : 0)
+          pages_to_download = new_loved_tracks_count / LASTFM_PAGE_SIZE + (new_loved_tracks_count % LASTFM_PAGE_SIZE > 0 ? 1 : 0)
           updated_pages = []
           (1..pages_to_download).each do |page|
             updated_pages << @lastfm.user.get_loved_tracks(user: @lastfm_user, page: page)
@@ -119,12 +120,12 @@ module LastDeezerFm
 
     # Создаёт новый плейлист и возвращает его id
     def create_lastfm_playlist
-      new_playlist_id = @deezer.create_playlist(@playlist_prefix + (@playlists.count + 1).to_s)
+      new_playlist_id = @deezer.create_playlist(@playlist_prefix + (@playlists.count + 1).to_s)['id']
       playlists.detect { |e| e[:id] == new_playlist_id }[:id]
     end
 
     def playlists
-      results = @deezer.playlists['data'].select { |e| e['title'].include?(@playlist_prefix) }
+      results = @deezer.playlists.select { |e| e['title'].include?(@playlist_prefix) }
       @playlists = results.map do |playlist|
         Hash.new.tap do |h|
           h[:id] = playlist['id']
@@ -153,7 +154,7 @@ module LastDeezerFm
       when 1
         searched_songs_mapping(deezer_response).first
       when 0
-        puts "Трек #{artist} - #{title} не был найден.".red
+        puts "Track #{artist} - #{title} not found.".red
         nil
       else
         searched_songs_mapping(deezer_response).select do |track|

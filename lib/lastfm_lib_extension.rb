@@ -8,23 +8,23 @@ class Lastfm::MethodCategory::User < Lastfm::MethodCategory::Base
                  request_with_authentication(method)
                end
     response = response.xml
-    all = []
+    all_responses = []
     pages_count = response['lovedtracks']['totalPages'].to_i
     songs_count = response['lovedtracks']['total'].to_i
-    all << response['lovedtracks']['track']
+    all_responses << response['lovedtracks']['track']
 
     (2..pages_count).each do |page|
       begin
-        print "Getting #{page}/#{pages_count}\r"
-        all << self.get_loved_tracks(options.merge(page: page))
+        print "Loading page #{page}/#{pages_count}\r"
+        all_responses << self.get_loved_tracks(options.merge(page: page))
       rescue StandardError => e
         puts e
       end
     end
-    all.flatten!
-    puts "#{all.count}/#{songs_count} tracks fetched!"
-    raise "Only #{all.count}/#{songs_count} tracks fetched!" unless all.count == songs_count
-    all
+    all_responses.flatten!
+    puts "#{all_responses.count}/#{songs_count} tracks received!"
+    raise "Only #{all_responses.count}/#{songs_count} tracks received!" unless all_responses.count == songs_count
+    all_responses
   end
 
   def loved_count(user)
