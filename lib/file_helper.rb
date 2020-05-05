@@ -3,6 +3,22 @@ module LastDeezerFm
     FILES_PATH = 'files'.freeze
 
     class << self
+
+      Kernel.module_eval do
+        def puts(obj = '', *args)
+          $stdout.puts(obj)
+          unless args.empty?
+            if args.first.include?(:filename)
+              timestamp = args.first.include?(:timestamp) ? '-' + args.first.fetch(:timestamp).to_s : ''
+              filename = args.first.fetch(:filename).to_s + timestamp
+              File.open("files/#{filename}.txt", 'a') do |file|
+                file.puts obj
+              end
+            end
+          end
+        end
+      end
+
       def save_file(entity, filename: caller[0][/`.*'/][1..-2], extension: :json, mode: 'w')
         Dir.mkdir(FILES_PATH) unless Dir.exist?(FILES_PATH)
         File.open("#{FILES_PATH}/#{filename}.#{extension.to_s}", mode) do |file|

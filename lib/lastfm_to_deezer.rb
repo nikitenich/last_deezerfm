@@ -1,7 +1,6 @@
 module LastDeezerFm
   class Importer
     require 'launchy'
-    require 'securerandom'
 
     def initialize(lastfm:, deezer:, lastfm_user: nil)
       raise 'Argument should be a LastFm instance!' unless lastfm.is_a? Lastfm
@@ -13,85 +12,70 @@ module LastDeezerFm
       @lastfm_user = lastfm_user
       @playlist_prefix = 'LastFM-loved-'.freeze
       @playlists = playlists
-      @uid = SecureRandom.hex(5)
+      @timestamp = Time.now.strftime('%d-%m-%Y_%T')
+      @puts_args = {filename: 'import_log', timestamp: @timestamp}
     end
 
-    # Импортирует любимые треки из lastfm
     def lastfm_loved
-      # Получаем любимые треки с lastfm либо из файла, если изменений не было
-      loved_tracks = get_lastfm_loved_tracks
+      @lastm_loved_tracks = get_lastfm_loved_tracks
 
-      create_lastfm_playlist if @playlists.empty? # создаём плейлист, если нет ни одного
+      create_lastfm_playlist if @playlists.empty? # create deezer playlist if not yet
 
-      # получаем последнюю песню в плейлисте в deezer,
-      # чтобы не начинать импорт с самого начала
+      # gets last playlist id created by this script
       playlist_with_last_track = if @playlists.last[:tracks_count].zero? && @playlists.count > 1
                                    @playlists[-2][:id]
                                  else
                                    @playlists.last[:id]
                                  end
-      last_playlist_track = searched_songs_mapping(@deezer.playlist_tracks(playlist_with_last_track, all: true).last)
 
-      start_index = if last_playlist_track.nil?
-                      0
-                    else
-                      # получаем этот последний трек из плейлиста уже из любимых на ласте
-                      last_playlist_track_lastfm = loved_tracks.detect do |loved_track|
-                        TextHelper.names_similar?(loved_track[:title].downcase, last_playlist_track[:title].downcase) &&
-                            TextHelper.names_similar?(loved_track[:artist].downcase, last_playlist_track[:artist].downcase)
-                      end
-                      loved_tracks.index(last_playlist_track_lastfm)
-                    end
+      start_index = last_added_to_playlist_track(playlist_with_last_track)
 
-      return if start_index == loved_tracks.count - 1
+      return if start_index == @lastm_loved_tracks.count - 1
 
-      (start_index..loved_tracks.count - 1).each do |i|
-        puts i.to_s.blue
-        track = loved_tracks[i]
-        lastfm_name = "#{track[:artist]} - #{track[:title]}"
-        deezer_tracks_search_result = @deezer.find_track(lastfm_name)
-        FileHelper.lputs(lastfm_name, @uid)
-        selected_track = choose_track(deezer_tracks_search_result, track[:artist], track[:title])
-        FileHelper.lputs('Selected result:', @uid)
-        FileHelper.lputs(selected_track, @uid)
+      (start_index..@lastm_loved_tracks.count - 1).each do |i|
+        lfm_track = @lastm_loved_tracks[i]
+        lfm_track_name = "#{lfm_track[:artist]} - #{lfm_track[:title]}"
+        deezer_tracks_search_result = @deezer.find_track(lfm_track_name)
+        puts("#{i + 1}) #{lfm_track_name}", @puts_args)
+        selected_track = choose_track(deezer_tracks_search_result, lfm_track[:artist], lfm_track[:title])
         if selected_track.nil?
-          FileHelper.save_file(lastfm_name, filename: 'not_found', extension: :txt, mode: 'a')
+          FileHelper.save_file(lfm_track_name, filename: 'not_found', extension: :txt, mode: 'a')
         else
+          puts('Selected result:', @puts_args)
+          puts(selected_track, @puts_args)
+
           lastfm_playlist_action do |playlist|
-            # добавляем трек в плейлист
+            # adding track to playlist
             @deezer.add_track_to_playlist(playlist_id: playlist, track_id: selected_track[:id]) do |success|
               if success
-                @deezer.favourite_tracks_ids.push(selected_track[:id])
-                FileHelper.lputs("Track #{selected_track[:artist]} - #{selected_track[:title]} added to playlist", @uid)
+                puts("Track #{selected_track[:artist]} - #{selected_track[:title]} added to playlist", @puts_args)
               end
             end
-            # и лайкаем его, если ещё нет
+            # adding track to favourites
             unless @deezer.favourite_track?(selected_track[:id])
               @deezer.like_track(selected_track[:id]) do |success|
                 if success
-                  FileHelper.lputs("Track #{selected_track[:artist]} - #{selected_track[:title]} added to favourites.", @uid)
+                  @deezer.favourite_tracks_ids.push(selected_track[:id])
+                  puts("Track #{selected_track[:artist]} - #{selected_track[:title]} added to favourites.", @puts_args)
                 end
               end
             end
-
           end
-
         end
       end
     end
 
     private
 
-    # Загружает любимые треки с ласта в массив из хэшей
+    # Loads loved tracks from Last.fm to array of hashes
     def get_lastfm_loved_tracks
-      if FileHelper.file_exists? # проверяем есть ли файл
-        lastfm_loved_tracks_count = @lastfm.user.loved_count(@lastfm_user)
+      if FileHelper.file_exists?
+        loved_tracks_count = @lastfm.user.loved_count(@lastfm_user)
         file = FileHelper.read_file.map { |h| h.transform_keys(&:to_sym) }
-        if file.count >= lastfm_loved_tracks_count
-          puts 'Seems there is no new loved Last.fm tracks. Loaded from file.'
-          file
+        if file.count >= loved_tracks_count
+          puts('Seems there is no new loved Last.fm tracks. Loaded from file.', @puts_args)
         else
-          new_loved_tracks_count = lastfm_loved_tracks_count - file.count
+          new_loved_tracks_count = loved_tracks_count - file.count
           puts "Found #{new_loved_tracks_count} new Last.fm loved tracks. Let's update saved file."
           pages_to_download = new_loved_tracks_count / LASTFM_PAGE_SIZE + (new_loved_tracks_count % LASTFM_PAGE_SIZE > 0 ? 1 : 0)
           updated_pages = []
@@ -108,10 +92,9 @@ module LastDeezerFm
             file << new_track
           end
           FileHelper.save_file(file)
-          file
         end
-      else # если файла нет, то нужно бы заново вообще всё загрузить
-        #старые треки будут самые первые, для удобного импорта
+        file
+      else # download from last.fm if file not exists
         loaded_loved_tracks = @lastfm.user.get_all_loved_tracks(user: @lastfm_user).reverse.map do |e|
           Hash.new.tap do |h|
             h[:title] = e['name']
@@ -123,9 +106,11 @@ module LastDeezerFm
       end
     end
 
-    # Создаёт новый плейлист и возвращает его id
+    # Creates new playlist and returns his id
     def create_lastfm_playlist
-      new_playlist_id = @deezer.create_playlist(@playlist_prefix + (@playlists.count + 1).to_s)['id']
+      new_playlist_id = @deezer.create_playlist(@playlist_prefix + (@playlists.count + 1).to_s) do |success|
+        puts("Playlist \"#{name}\" was successfully created.", @puts_args) if success
+      end['id']
       playlists.detect { |e| e[:id] == new_playlist_id }[:id]
     end
 
@@ -140,9 +125,8 @@ module LastDeezerFm
       end
     end
 
-    # Выбирает плейлист. Если количество треков в последнем плейлисте < константы, то берём его,
-    # иначе создаём новый
-    # Возвращает id плейлиста
+    # chooses playlist for actions
+    # returns playlist id
     def choose_lastfm_playlist
       last_created_playlist = playlists.last
       last_created_playlist[:tracks_count] >= DEEZER_MAX_PLAYLIST_TRACKS ? create_lastfm_playlist : last_created_playlist[:id]
@@ -153,13 +137,13 @@ module LastDeezerFm
       yield playlist
     end
 
-    # Выбираем наиболее приемлимый вариант трека из результатов поиска дизера
+    # Chooses track from search results
     def choose_track(deezer_response, artist, title)
       case deezer_response.count
       when 1
         searched_songs_mapping(deezer_response).first
       when 0
-        puts "Track #{artist} - #{title} not found.".red
+        puts("Track #{artist} - #{title} not found in Deezer.", @puts_args)
         nil
       else
         searched_songs_mapping(deezer_response).select do |track|
@@ -167,7 +151,21 @@ module LastDeezerFm
               TextHelper.names_similar?(track[:title].downcase, title.downcase)
         end.first
       end
+    end
 
+    # Returns index of last added deezer playlist track in
+    # lastfm loved tracks
+    def last_added_to_playlist_track(playlist_id)
+      last_playlist_track = searched_songs_mapping(@deezer.playlist_tracks(playlist_id, all: true).last)
+      if last_playlist_track.nil?
+        0
+      else
+        last_playlist_track_lastfm = @lastm_loved_tracks.detect do |loved_track|
+          TextHelper.names_similar?(loved_track[:title].downcase, last_playlist_track[:title].downcase) &&
+              TextHelper.names_similar?(loved_track[:artist].downcase, last_playlist_track[:artist].downcase)
+        end
+        @lastm_loved_tracks.index(last_playlist_track_lastfm)
+      end
     end
 
     def searched_songs_mapping(find_track_response)

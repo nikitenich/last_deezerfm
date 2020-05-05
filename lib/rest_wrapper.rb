@@ -16,7 +16,7 @@ class RestWrapper
                  end
       parsed = begin
                  JSON.parse(response)
-               rescue
+               rescue JSON::ParserError
                  response
                end
       success_status = success_response?(parsed)
@@ -30,7 +30,7 @@ class RestWrapper
       yield success_status if block_given?
       parsed
     rescue RestClient::Exception => e
-      raise "Error while sending GET request #{url}:\n" + e.to_s + "\nResponse: #{e.response}\nPayload: #{payload}\nHeaders: #{headers}"
+      raise "Error while sending #{type.to_s.upcase} request #{url}:\n" + e.to_s + "\nResponse: #{e.response}\nHeaders: #{headers}\nPayload: #{payload}"
     end
 
     def success_response?(response)
@@ -39,9 +39,7 @@ class RestWrapper
         !response.key?('error')
       when String
         response == 'true'
-      when TrueClass
-        response
-      when FalseClass
+      when TrueClass, FalseClass
         response
       end
     end
